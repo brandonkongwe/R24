@@ -1,0 +1,162 @@
+---
+title: "LTCUSD Trading Analysis Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(shiny)
+library(flexdashboard)
+library(tidyverse)
+library(plotly)
+library(zoo)
+
+# Load and preprocess data
+data <- read_csv("C:\\Users\\asus\\Desktop\\Individual R\\gemini_LTCUSD_2020_1min.csv")
+data <- data %>%
+  mutate(Date = as.POSIXct(Date, format = "%m/%d/%Y %H:%M"))
+
+# Utility functions
+calculate_rolling_average <- function(data, window_size = 10) {
+  data %>%
+    arrange(Date) %>%
+    mutate(Moving_Avg = zoo::rollmean(Close, k = window_size, fill = NA, align = "right"))
+}
+
+calculate_returns <- function(data) {
+  data %>%
+    arrange(Date) %>%
+    mutate(Returns = (Close - lag(Close)) / lag(Close) * 100)
+}
+
+# Apply functions
+data <- calculate_returns(data)
+data <- calculate_rolling_average(data)
+```
+
+Dashboard 
+===============================================
+
+Inputs {.sidebar data-width=170}
+-----------------------------------------------
+
+```{r}
+# sidebar inputs for date range and month selection
+dateRangeInput("date_range", "Select Date Range:",
+               start = min(data$Date), end = max(data$Date),
+               min = min(data$Date), max = max(data$Date))
+
+selectInput("month", "Select Month:", 
+            choices = c("All" = "", unique(format(data$Date, "%Y-%m"))),
+            selected = "")
+
+# reactive filter based on date range and month selection
+filtered_data <- reactive({
+  data %>%
+    filter(Date >= input$date_range[1], Date <= input$date_range[2]) %>%
+    filter(if (input$month == "") TRUE else format(Date, "%Y-%m") == input$month)
+})
+```
+
+
+Row 
+-----------------------------------------------
+
+###
+```{r}
+renderValueBox({
+  valueBox("Average Close Price", value = round(mean(filtered_data()$Close, na.rm = TRUE), 2),
+           color = "blue")
+})
+```
+
+###
+```{r}
+renderValueBox({
+  valueBox("Max High Price", value = round(max(filtered_data()$High, na.rm = TRUE), 2),
+           color = 'green')
+})
+```
+
+###
+```{r}
+renderValueBox({
+  valueBox("Min Low Price", value = round(min(filtered_data()$Low, na.rm = TRUE), 2),
+           color = 'lightblue')
+})
+```
+
+###
+```{r}
+renderValueBox({
+  valueBox("Total Volume", value = round(sum(filtered_data()$Volume, na.rm = TRUE), 2),
+           color = 'darkred')
+})
+```
+
+
+Row {data-height=300}
+-----------------------------------------------
+
+### Closing Price Over Time
+```{r}
+renderPlotly({
+  plot_ly(filtered_data(), x = ~Date, y = ~Close, type = 'scatter', mode = 'lines', line = list(color = 'blue')) %>%
+    layout(title = "LTCUSD Closing Price Over Time",
+           xaxis = list(title = "Date"), yaxis = list(title = "Close Price"))
+})
+```
+
+Row {data-height=280}
+-----------------------------------------------
+
+### Distribution of LTCUSD Closing Prices
+```{r}
+renderPlotly({
+  plot_ly(filtered_data(), x = ~Close, type = 'histogram', marker = list(color = 'skyblue')) %>%
+    layout(title = "Distribution of LTCUSD Closing Prices",
+           xaxis = list(title = "Close Price"), yaxis = list(title = "Frequency"))
+})
+```
+
+### Daily Returns (%)
+```{r}
+renderPlotly({
+  plot_ly(filtered_data(), x = ~Date, y = ~Returns, type = 'scatter', mode = 'lines', line = list(color = 'blue')) %>%
+    layout(title = "Daily Returns (%)",
+           xaxis = list(title = "Date"), yaxis = list(title = "Returns (%)"))
+})
+```
+
+Row {data-height=280}
+-----------------------------------------------
+
+### Closing Price with Moving Averages
+```{r}
+renderPlotly({
+  plot_ly(filtered_data(), x = ~Date) %>%
+    add_lines(y = ~Close, name = "Close Price", line = list(color = 'blue')) %>%
+    add_lines(y = ~Moving_Avg, name = "Moving Average", line = list(color = 'red')) %>%
+    layout(title = "Closing Price with Moving Averages",
+           xaxis = list(title = "Date"), yaxis = list(title = "Price"))
+})
+```
+
+
+### Distribution of Volume by Hour
+```{r}
+renderPlotly({
+  sum_volume <- filtered_data() %>%
+    mutate(Hour = format(Date, "%H")) %>%
+    group_by(Hour) %>%
+    summarise(Total_Volume = sum(Volume, na.rm = TRUE))
+  
+  plot_ly(sum_volume, x = ~Hour, y = ~Total_Volume, type = 'box', marker = list(color = 'lightblue')) %>%
+    layout(title = "Distribution of Volume by Hour",
+           xaxis = list(title = "Hour"), yaxis = list(title = "Volume"))
+})
+```
+

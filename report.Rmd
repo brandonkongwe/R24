@@ -1,0 +1,394 @@
+---
+title: "R Programming Assignment"
+output:
+  word_document:
+    toc: true
+date: "2024-10-29"
+---
+
+## Introduction
+The dataset under analysis consists of minute-by-minute trading data for Litecoin (LTC) against the US Dollar (USD) from 
+January 1, 2020, to April 20, 2021, encompassing over 600,000 records. It includes key fields such as date, open price, 
+high price, low price, close price, and trading volume, offering a detailed view of market behavior during this period.
+
+The main objective of this analysis is to uncover time-dependent patterns in the data, including trends, seasonality, and volatility. 
+By identifying these patterns, we aim to develop forecasting models to predict future price movements, which can assist in 
+strategic decision-making.
+
+```{r setup, include=TRUE}
+library(tidyverse)
+library(purrr)
+library(plotly)
+library(zoo)
+library(forecast)
+library(tseries)
+
+data <- read_csv("C:\\Users\\asus\\Desktop\\Individual R\\gemini_LTCUSD_2020_1min.csv")
+```
+
+## 1. Data Exploration and Cleaning
+
+The data cleaning process involved several essential steps to ensure quality and consistency. First, the dataset's structure, 
+summary statistics, and dimensions were checked using functions like `str()`, `summary()`, and `dim()`. 
+This provided a comprehensive overview of each variable, including data types, ranges, statistical values, and the overall size of the dataset. 
+Next, a check for missing values was conducted, which is crucial for deciding whether imputation or removal of incomplete data is necessary.
+Duplicate rows were also checked to prevent redundancy that could skew the analysis.
+
+The Date column was converted to a date-time format, enabling proper chronological sequencing of the data, which is essential for 
+time series analysis. Finally, boxplots for the numeric columns (Open, High, Low, Close, and Volume) were created to visually detect outliers. 
+
+```{r}
+# Check the structure, summary and dimensions
+str(data)  # Structure of the dataset
+summary(data)  # Summary statistics for each variable
+dim(data)  # Dimensions of the dataset (rows, columns)
+
+# checking for any missing values
+colSums(is.na(data))
+
+# Check for duplicates
+duplicated_rows <- sum(duplicated(data))
+print(paste("Number of duplicated rows: ", duplicated_rows))
+
+# convert Date column to date-time format
+data$Date <- as.POSIXct(data$Date, format = "%m/%d/%Y %H:%M")
+
+numeric_cols <- data %>%
+  select('Open', 'High', 'Low', 'Close', 'Volume')
+
+numeric_cols %>%
+  gather(key = "variable", value = "value") %>%
+  ggplot(aes(x = variable, y = value)) + 
+  geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  ggtitle("Boxplot for Outlier Detection")
+
+```
+
+## 2. Advanced R Programming
+
+Three custom functions were created to compute compute rolling averages, summary statistics, and daily returns on the data.
+
+- `calculate_rolling_average`: This function calculates a moving average for the Close price column. It arranges the data by Date to ensure chronological order, then applies a rolling mean using the zoo::rollmean function with a specified window size (default is 10). This moving average smooths out short-term fluctuations, helping identify underlying trends in the Close prices.
+
+- `summarize_statistics`: This function provides summary statistics for key financial indicators. It calculates the mean of Open and Close prices, the maximum High price, the minimum Low price, and the total trading Volume. By using na.rm = TRUE, it ensures that any missing values are ignored in these calculations.
+
+- `calculate_returns`: This function calculates daily returns based on the Close prices. Returns are computed as the percentage change from the previous day’s closing price. This metric is useful for analyzing price volatility and potential investment gains or losses.
+
+```{r}
+# calculate rolling averages
+calculate_rolling_average <- function(data, window_size = 10) {
+  data %>%
+    arrange(Date) %>%
+    mutate(Moving_Avg = zoo::rollmean(Close, k = window_size, fill = NA, align = "right"))
+}
+
+# display summary statistics
+summarize_statistics <- function(data) {
+  data %>%
+    summarise(
+      mean_open = mean(Open, na.rm = TRUE),
+      mean_close = mean(Close, na.rm = TRUE),
+      max_high = max(High, na.rm = TRUE),
+      min_low = min(Low, na.rm = TRUE),
+      total_volume = sum(Volume, na.rm = TRUE)
+    )
+}
+
+# calculate daily returns
+calculate_returns <- function(data) {
+  data %>%
+    arrange(Date) %>%
+    mutate(Returns = (Close - lag(Close)) / lag(Close) * 100)
+}
+
+
+# apply functions to the data
+data <- calculate_returns(data)
+data <- calculate_rolling_average(data)
+
+# display summary statistics
+summarize_statistics(data)
+```
+
+
+## 3. Data Visualization
+
+### 3.1 Closing Price Over Time
+This line plot below displays the closing price for LTCUSD stocks over the specified time period in the dataset. 
+It helps to identify long-term trends and potential seasonal patterns in the closing prices. It shows that the price was relatively stable 
+until late 2020, when it began a sharp upward trend, peaking around mid-2021. This indicates a significant increase in LTCUSD's value during that period.
+```{r}
+# closing price over time line plot
+ggplot(data, aes(x = Date, y = Close)) +
+  geom_line(color = "blue") +
+  labs(title = "LTCUSD Closing Price Over Time", x = "Date", y = "Close Price") +
+  theme_minimal()
+```
+
+### 3.2 Volume vs. Close Price
+The scatter plot below examines the relationship between Volume and Close price. It can highlight any correlation between trading volume and closing price levels, often indicating price momentum during high-volume trading sessions.
+Most points cluster on the left side of the chart (low volume), with a wide range of closing prices, suggesting that LTCUSD's price volatility does not correlate strongly with trading volume. However, there are occasional higher-volume points spread across the price range, indicating sporadic periods of higher trading activity.
+```{r}
+# volume vs close price scatter plot
+ggplot(data, aes(x = Volume, y = Close)) +
+  geom_point(alpha = 0.5, color = "purple") +
+  labs(title = "Volume vs Close Price", x = "Volume", y = "Close Price") +
+  theme_minimal()
+```
+
+### 3.3 Distribution of LTCUSD Closing Prices
+The histogram below displays the frequency distribution of the Close price, revealing how prices are distributed and helping identify common price ranges. 
+The data is right-skewed, with the majority of closing prices falling between $0 and $100. There are fewer instances of higher closing prices above $100, showing that lower prices have been more common throughout the timeframe of this dataset.
+```{r}
+# histogram plot for the distribution of closing prices
+ggplot(data, aes(x = Close)) +
+  geom_histogram(binwidth = 5, fill = "skyblue", color = "black") +
+  labs(title = "Distribution of LTCUSD Closing Prices", x = "Close Price", y = "Frequency") +
+  theme_minimal()
+```
+
+### 3.4 Closing Price with Moving Averages
+This line plot below includes both the Close price and its moving average. The addition of the moving average (in red) smooths out short-term fluctuations, highlighting underlying trends and making it easier to spot upward or downward momentum.
+The moving average closely follows the price trend, confirming the overall upward trend.
+```{r}
+# closing price with moving averages line plot
+ggplot(data, aes(x = Date)) +
+  geom_line(aes(y = Close, color = "Close Price")) +
+  geom_line(aes(y = Moving_Avg, color = "Moving Average")) +
+  labs(title = "Closing Price with Moving Averages", x = "Date", y = "Price") +
+  scale_color_manual(values = c("Close Price" = "blue", "Moving Average" = "red")) +
+  theme_minimal()
+```
+
+### 3.5 Daily Returns (%)
+The line plot of daily returns below shows the percentage changes in Close prices. This visualization is useful for assessing price volatility, which can be informative for risk analysis and investment decisions.
+Most returns cluster around zero, but there are visible spikes and dips indicating periods of significant volatility. This plot highlights that while the LTCUSD market is often stable, there are days with large positive or negative returns, likely due to market events or high trading activity.
+```{r}
+# line plot for daily returns
+ggplot(data, aes(x = Date, y = Returns)) +
+  geom_line(color = "blue") +
+  labs(title = "Daily Returns (%)", x = "Date", y = "Returns (%)") +
+  theme_minimal()
+```
+
+
+### 3.6 Closing Price Variation by Hour
+
+The box plot below shows the hourly variation in the Close price, providing insights into how prices fluctuate at different times of the day, potentially revealing peak trading hours or hourly trends.
+The spread within each boxplot indicates price variability at each hour. The closing price has outliers at higher levels, indicating occasional price spikes. Overall, the median closing prices seem consistent across hours, with slight fluctuations.
+```{r}
+# extract hour from timestamp
+data <- data %>%
+  mutate(Hour = format(Date, "%H"))
+
+# box plot displaying the variation of the closing price by hour
+ggplot(data, aes(x = Hour, y = Close)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = "Closing Price Variation by Hour", x = "Hour", y = "Close Price") +
+  theme_minimal()
+```
+
+### 3.7 Distribution of Volume by Hour
+
+The box plot below visualizes the distribution of total trading Volume across different hours. It can indicate when trading activity is highest, which may correlate with price movements.
+Higher volumes are generally seen in the middle of the day (around 14:00 to 17:00) and lower volumes during the early morning hours. 
+This could reflect periods when market participants are more active, likely corresponding to peak trading hours in regions with high trading interest in LTCUSD.
+```{r}
+# aggregate the total volume of stocks traded per hour of each day
+sum_volume <- data %>%
+  group_by(Hour) %>%
+  summarise(Total_Volume = sum(Volume, na.rm = TRUE))
+
+# trading volume by hour
+ggplot(sum_volume, aes(x = Hour, y = Total_Volume)) +
+  geom_boxplot(outlier.color = "red", fill = "lightblue") +
+  labs(title = "Distribution of Volume by Hour", x = "Hour", y = "Volume") +
+  theme_minimal()
+```
+
+## 4. Interactive Visualization
+
+### 4.1 Dashboard
+
+![alt text](C:\Users\asus\Desktop\Individual R\dash1.png)
+
+![alt text](C:\Users\asus\Desktop\Individual R\dash2.png)
+### 4.2 Interactive Features and Benefits
+
+
+**Date Range Filter**: The date range filter allows users to filter data between specific dates, providing the flexibility to analyze trends over various periods. Users can focus on short-term or long-term trends, making it easy to identify seasonality or period-specific price movements.
+
+**Monthly Filter**: The dropdown option for month selection enables users to focus on individual months. This helps users who want to perform a more granular analysis or compare monthly trends.
+
+**Dynamic KPI Display**: Key performance indicators (KPIs) such as average closing price, maximum high price, minimum low price, and total volume are displayed. These KPIs provide quick insights and update interactively based on the selected date range, helping users gauge the overall performance of the asset within the chosen period.
+
+**Interactive Visualizations**: The different graphs are designed to track closing price, trading volume, and daily returns trends over the selected period. Users can zoom in and out, hover over points for exact values, and identify spikes or dips easily.
+
+### 4.3 Target Audience
+
+The dashboard is designed for **crypto traders**, **financial analysts**, and **casual cryptocurrency investors** who are interested in understanding the price behavior of LTCUSD. Experienced traders would benefit from the KPIs and time series data, as they can quickly gauge market sentiment and make data-driven trading decisions based on historical trends. Financial analysts can utilize the distribution charts and moving average indicators for detailed data exploration, analyzing trading volume, price distribution, and return volatility. And finally, casual investors would find the average closing price, highest price, and lowest price sections beneficial for a summary view of the asset’s past performance. They might rely more on these KPIs and overall trends than detailed volatility data.
+
+## 5. Time Series Analysis
+
+### 5.1 Identifying time-dependent patterns
+
+The first step was to aggregate the data to a lower frequency (i.e., daily) to make it easier to identify trends or patterns. Afterwards, the daily closing price was plotted to identify any trends, seasonality, or cycles.
+
+```{r}
+# aggregating the data to a daily frequency for easier analysis
+daily_data <- data %>%
+  group_by(Date = as.Date(Date)) %>%
+  summarise(Open = first(Open), High = max(High), Low = min(Low), 
+            Close = last(Close), Volume = sum(Volume))
+
+# plotting the time series
+ggplot(daily_data, aes(x = Date, y = Close)) +
+  geom_line(color = "blue") +
+  labs(title = "LTCUSD Daily Closing Price", x = "Date", y = "Closing Price")
+```
+
+Seasonal decomposition is then used to separate trend, seasonality, and residuals. The **trend** shows the long-term increase or decrease.
+The **seasonality** shows regular patterns, such as daily or weekly cycles. The **remainder** (or residuals) shows what is left over when the seasonal and trend-cycle components have been subtracted from the data (Hyndman and Athanasopoulos, 2018).
+```{r}
+# decomposing the time series (additive model) for weekly data
+ts_data <- ts(daily_data$Close, frequency = 7) 
+decomposition <- decompose(ts_data, type = "additive") 
+
+# plotting the decomposition
+autoplot(decomposition) + ggtitle("Decomposition of Daily Close Price Time Series")
+```
+**Trend**: The trend component in the decomposition plot reveals a gradual increase in the daily close price of the cryptocurrency. This suggests a general upward trend, with a notable acceleration in growth toward the latter part of the series.
+
+**Seasonality**: There is a recurring seasonal pattern, indicating periodic fluctuations in the daily close price. This may reflect weekly trading behaviors in the market.
+
+**Remainder**: The remainder component (or residuals) shows some variability, especially towards the end, indicating some noise in the data that are not captured by the trend or seasonal components.
+
+### 5.2 Time-Series Forecasting
+
+#### 5.2.1 Testing for Stationarity
+
+Forecasting models assume that the time-series data is stationary, meaning that it has a constant mean and variance over time (Nielsen, 2019). In other words, 
+a time-series is considered stationary if the underlying process that generates the data stays consistent over time. This doesn't mean the data itself doesn't vary, but rather that the rules or characteristics driving the data remain stable.
+
+The Augmented Dickey-Fuller (ADF) test is used to check for stationarity. If the p-value is less than the significance level (typically 0.05), the null hypothesis (the data is not stationary) is rejected, and the alternative hypothesis (the data is stationary) is not rejected, and vice-versa (AlMadany et al, 2024).
+```{r}
+# checking for stationarity
+adf.test(ts_data)
+```
+
+As can be seen from the results above, the p-value is greater than the significance level (0.05), so the null hypothesis is not rejected. This means that the time-series data is not stationary.
+The next step is to make the data stationary by applying a logarithmic transformation, using the `log()` function, to stabilize the variance and subsequently differencing the data, using the `diff()` function, to remove trends or seasonality by calculating the difference between consecutive observations (Sultan, 2023).
+```{r}
+# differencing the data since it is not stationary
+log_diff_data <- diff(log(ts_data), differences = 1)
+plot(log_diff_data, main = "Log-Transformed & Differenced Data")
+
+# checking for stationarity again
+adf.test(log_diff_data)
+```
+
+The test results above show that the transformed data is now stationary, since the p-value is less than the significance level, 0.05.
+
+#### 5.2.2 Fitting the ARIMA model 
+
+The next step is performing the forecasting using the ARIMA model. The **ARIMA (Auto-Regressive Integrated Moving Average)** model is popular for forecasting time series data. By using the `auto.arima()` function, it automatically select the best parameters.
+```{r}
+# fitting the ARIMA model
+model <- auto.arima(log_diff_data)
+summary(model)
+
+# forecasting close prices for the next 30 days
+forecast_values <- forecast(model, h = 30)  
+plot(forecast_values)
+```
+
+#### 5.2.3 Evaluating the ARIMA model
+```{r}
+# splitting the data into training and test data
+train_data <- head(log_diff_data, round(length(log_diff_data) * 0.8))
+test_data <- tail(log_diff_data, round(length(log_diff_data) * 0.2))
+
+# training the ARIMA model on the training data
+train_model <- auto.arima(train_data)
+
+# forecasting for the test data period
+forecast_train <- forecast(train_model, h = length(test_data))
+
+# plotting the ARIMA model forecast
+plot(forecast_train)
+lines(test_data, col = "red")
+
+# evaluating the accuarcy of the ARIMA model
+accuracy(forecast_train, test_data)
+```
+
+The ARIMA model yields a very low **Root Mean Squared Error (RMSE)** on both the training and test set, which shows consistent performance across both sets.
+The test set's **Mean Absolute Percentage Error (MAPE)** is very high and suggests a high percentage error, which may be due to the inherent volatility in cryptocurrency prices. However, the ARIMA model captures the overall trend to a reasonable degree, as indicated by a relatively low **RMSE** and **Mean Absolute Error (MAE)**.
+The **Theil's U** statistic for the test set indicates that the ARIMA model performs slightly better than a naïve forecast but may still have room for improvement.
+The **Autocorrelation of Forecast Errors (ACF1)** metric measures the correlation between forecast errors and lagged errors. Both **ACF1** values are near zero, indicating that there is minimal autocorrelation in forecast errors, suggesting that the model has effectively captured the underlying patterns.
+
+#### 5.2.4 Fitting the Exponential Smoothing (ETS) model 
+
+**Exponential Smoothing (ETS)** is another popular choice for data with seasonality or trends. It uses error, trend, and seasonal components to make forecasts. The ETS model was used to compare its performance on the data with the ARIMA model.
+```{r}
+# fitting the ETS model on the training data
+ets_model <- ets(train_data)
+summary(ets_model)
+```
+
+
+#### 5.2.5 Evaluating the ETS Model
+```{r}
+# forecasting for the test data period
+ets_forecast <- forecast(ets_model, h = length(test_data))
+
+# plotting the ETS model forecast
+plot(ets_forecast)
+lines(test_data, col = "red")
+
+# evaluating the accuarcy of the ARIMA model
+accuracy(ets_forecast, test_data)
+```
+
+The ETS model shows similar **RMSE** values as the ARIMA model. This suggests the ETS model is comparable to ARIMA in terms of overall prediction accuracy.
+The ETS model has a very high test set **MAPE**, which is marginally better than ARIMA but still high, indicating forecasting challenges likely due to volatility. The **MAE** is also close to that of ARIMA, suggesting that both models have similar precision for this data.
+The ETS model has a **Theil's U** value slightly lower than that of the ARIMA model, indicating it performs slightly better than ARIMA for this data.
+The model has an **Autocorrelation of Forecast Errors (ACF1)** score very close to zero on both the training and test sets, which are approximately equal to the ARIMA model.
+
+## 6. Applications
+
+Potential applications of the analysis in a business context include the following:
+
+**1. Trading Strategy Development**:
+
+- The identification of hourly variations in closing prices can be beneficial for developing time-specific trading strategies. For instance, if certain hours demonstrate higher volatility, traders could plan trades to capitalize on these fluctuations, potentially enhancing profitability.
+Understanding hourly price variability can lead to more strategic decision-making in trade execution timing, maximizing returns, and minimizing risks based on predictable patterns in hourly price movement.
+
+**2. Risk Management and Volatility Assessment**:
+
+- The analysis of daily returns, especially the identification of large spikes and dips, is essential for risk management. Financial institutions or traders can use this data to anticipate periods of high volatility, adjust stop-loss or take-profit levels, and protect against excessive losses.
+By knowing periods with high potential for price swings, businesses can avoid risky trades or prepare for larger margin requirements, ultimately reducing exposure to unexpected market shocks and improving portfolio stability.
+
+**3. Market Sentiment Analysis**:
+
+- Monitoring daily return spikes and drops can offer hints about market sentiment around key events, such as regulatory changes or significant market announcements. Analyzing these patterns alongside event data can refine sentiment analysis models used by trading firms.
+Improved sentiment analysis helps traders and investors anticipate market responses to news events, guiding more informed buy/sell decisions and allowing for timely responses to market conditions.
+
+This analysis offers a strategic edge in business decision-making. By understanding price distributions, time-based volatility, and historical patterns, stakeholders can make data-driven choices to boost profitability and reduce risk. These insights allow for more accurate trade timing, the development of tailored financial products, and improved currency management, which together enhance market competitiveness.
+
+## 7. Conclusion
+
+The ARIMA and ETS models perform similarly, with ETS showing slightly better results based on MAPE and Theil's U. However, both models have high MAPE values, which could be a result of actual values in the series are close to zero (Kim and Kim, 2016); in this case, the data was transformed by applying a logarithmic transformation and differencing consecutive observations, resulting in the data consisting of values close to zero. It is best to focus on RMSE and MAE in this context, as they are absolute measures. The models both have very low Root Mean Squared Error (RMSE), Mean Absolute Error (MAE), and Mean Absolute Squared Error (MASE) values which means they are able capture the general trend and seasonal patterns. Machine learning approaches, such as Long-Short Term Memory (LSTM), or combining ARIMA/ETS with volatility measures in a hybrid model may be able to handle the level of volatility found in the data more effectively and increase forecasting accuracy.
+
+## References
+
+AlMadany, N.N., Hujran, O., Al Naymat, G. and Maghyereh, A., 2024. Forecasting cryptocurrency returns using classical statistical and deep learning techniques. International Journal of Information Management Data Insights, 4(2), p.100251.
+
+Hyndman, R.J., & Athanasopoulos, G. (2018) Forecasting: principles and practice, 2nd edition, OTexts: Melbourne, Australia. OTexts.com/fpp2.
+
+Kim, S. and Kim, H., 2016. A new metric of absolute percentage error for intermittent demand forecasts. International Journal of Forecasting, 32(3), pp.669-679.
+
+Nielsen, A., 2019. Practical time series analysis: Prediction with statistics and machine learning. O'Reilly Media.
+
+Sultan, M.A., 2023. Forecasting the GDP in the United States by using ARIMA Model. Can. J. Bus. Inf. Stud, 5(3), pp.63-69.
